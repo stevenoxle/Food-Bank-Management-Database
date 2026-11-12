@@ -1,24 +1,16 @@
--- INFO2413 Food Bank Management System (Option 1)
--- SIMPLIFIED MySQL 8.0.16+ database: 11 tables, 5 reporting views.
--- Designed for local-hosted Java web application implementation.
---
--- IMPORTANT:
--- 1. This creates a NEW database named food_bank_simple.
---    It does NOT change or delete your original food_bank_management database.
--- 2. Your Java backend must enforce role-based permissions, record ownership,
---    recipient approval, stock consistency, and notifications.
--- 3. Store password HASHES made using BCrypt/Argon2 in Java; no plaintext passwords.
--- 4. Do not use the MySQL root account as the Java application's database user.
--- 5. No user accounts/test passwords are inserted by this script.
+-- Food Bank Management Databse
+-- INFO 2323 Group Project
+-- Steven Le  100326241
+-- Database ran for Java implementation
 
-CREATE DATABASE IF NOT EXISTS food_bank_simple
+CREATE DATABASE food_bank_simple
     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE food_bank_simple;
 
 -- 1/11 ACCOUNTS: all users in one table, with optional role-specific fields.
 -- Role COORDINATOR = manager/admin.  Only coordinator has full app access.
 -- Recipient signups start PENDING; coordinator approval changes to ACTIVE.
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE accounts (
     account_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     full_name VARCHAR(150) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -47,19 +39,19 @@ CREATE TABLE IF NOT EXISTS accounts (
 ) ENGINE=InnoDB;
 
 -- 2/11 INVENTORY CATEGORIES: coordinator maintains the list.
-CREATE TABLE IF NOT EXISTS inventory_categories (
+CREATE TABLE inventory_categories (
     category_id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
     category_name VARCHAR(100) NOT NULL,
     PRIMARY KEY (category_id),
     UNIQUE KEY uq_category_name (category_name)
 ) ENGINE=InnoDB;
 
-INSERT IGNORE INTO inventory_categories (category_name) VALUES
+INSERT INTO inventory_categories (category_name) VALUES
     ('Produce'), ('Dairy'), ('Grains'), ('Canned Goods'), ('Protein'),
     ('Frozen Foods'), ('Baby Supplies'), ('Hygiene'), ('Other');
 
 -- 3/11 DONATIONS: one record per donor submission.
-CREATE TABLE IF NOT EXISTS donations (
+CREATE TABLE donations (
     donation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     donor_id BIGINT UNSIGNED NOT NULL,
     status ENUM('SUBMITTED','RECEIVED','CANCELLED') NOT NULL DEFAULT 'SUBMITTED',
@@ -79,7 +71,7 @@ CREATE TABLE IF NOT EXISTS donations (
 -- 'quantity' is the declared/accepted amount. When volunteer receives donation,
 -- Java sets quantity_available = quantity and donation.status = 'RECEIVED'
 -- together in ONE transaction. Later distribution/waste reduces available stock.
-CREATE TABLE IF NOT EXISTS donation_items (
+CREATE TABLE donation_items (
     donation_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     donation_id BIGINT UNSIGNED NOT NULL,
     category_id SMALLINT UNSIGNED NOT NULL,
@@ -105,7 +97,7 @@ CREATE TABLE IF NOT EXISTS donation_items (
 ) ENGINE=InnoDB;
 
 -- 5/11 DISTRIBUTION SHIFTS: coordinator creates scheduled tasks.
-CREATE TABLE IF NOT EXISTS distribution_shifts (
+CREATE TABLE distribution_shifts (
     shift_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     shift_start DATETIME NOT NULL,
     shift_end DATETIME NOT NULL,
@@ -120,7 +112,7 @@ CREATE TABLE IF NOT EXISTS distribution_shifts (
 ) ENGINE=InnoDB;
 
 -- 6/11 VOLUNTEER SHIFT ASSIGNMENTS: a shift can have many volunteers.
-CREATE TABLE IF NOT EXISTS volunteer_shift_assignments (
+CREATE TABLE volunteer_shift_assignments (
     shift_id BIGINT UNSIGNED NOT NULL,
     volunteer_id BIGINT UNSIGNED NOT NULL,
     task_description VARCHAR(500) NULL,
@@ -135,7 +127,7 @@ CREATE TABLE IF NOT EXISTS volunteer_shift_assignments (
 -- 7/11 HAMPER REQUESTS: pickup appointment + final distribution event.
 -- Only ACTIVE recipients can request hampers (enforce in Java).
 -- Fulfilled means actual_pickup_at is filled and items are recorded.
-CREATE TABLE IF NOT EXISTS hamper_requests (
+CREATE TABLE hamper_requests (
     request_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     recipient_id BIGINT UNSIGNED NOT NULL,
     requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -160,7 +152,7 @@ CREATE TABLE IF NOT EXISTS hamper_requests (
 -- 8/11 DISTRIBUTION ITEMS: multiple food items per hamper.
 -- Java must ensure each quantity <= available stock, then decrement stock
 -- and insert items in ONE database transaction (SELECT ... FOR UPDATE).
-CREATE TABLE IF NOT EXISTS distribution_items (
+CREATE TABLE distribution_items (
     distribution_item_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     request_id BIGINT UNSIGNED NOT NULL,
     donation_item_id BIGINT UNSIGNED NOT NULL,
@@ -178,7 +170,7 @@ CREATE TABLE IF NOT EXISTS distribution_items (
 -- 9/11 INVENTORY WASTE: preserve loss history for monthly/yearly reports.
 -- Java must decrement quantity_available and increment quantity_wasted
 -- in the SAME transaction as inserting this record.
-CREATE TABLE IF NOT EXISTS inventory_waste (
+CREATE TABLE inventory_waste (
     waste_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     donation_item_id BIGINT UNSIGNED NOT NULL,
     quantity DECIMAL(12,2) NOT NULL,
@@ -196,7 +188,7 @@ CREATE TABLE IF NOT EXISTS inventory_waste (
 
 -- 10/11 PICKUP STATUS EVENTS: history is necessary for missed/delayed report
 -- even when a late pickup eventually becomes FULFILLED.
-CREATE TABLE IF NOT EXISTS pickup_status_events (
+CREATE TABLE pickup_status_events (
     event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     request_id BIGINT UNSIGNED NOT NULL,
     status ENUM('REQUESTED','SCHEDULED','FULFILLED','MISSED','DELAYED','CANCELLED') NOT NULL,
@@ -213,7 +205,7 @@ CREATE TABLE IF NOT EXISTS pickup_status_events (
 -- 11/11 SYSTEM ALERTS: one row per person to email (no delivery join table).
 -- Java generates expiry/missed/delayed alerts and sends real emails.
 -- For expiry risk, the subject/body can include the rule-based calculation.
-CREATE TABLE IF NOT EXISTS system_alerts (
+CREATE TABLE system_alerts (
     alert_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     alert_type ENUM('PICKUP_MISSED','PICKUP_DELAYED','INVENTORY_AT_RISK') NOT NULL,
     request_id BIGINT UNSIGNED NULL,
@@ -300,22 +292,3 @@ SELECT YEAR(w.wasted_at) AS report_year,
 FROM inventory_waste w
 JOIN donation_items di ON di.donation_item_id = w.donation_item_id
 JOIN inventory_categories c ON c.category_id = di.category_id
-GROUP BY YEAR(w.wasted_at), MONTH(w.wasted_at), c.category_name, di.unit;
-
--- After importing in MySQL Workbench, run:
--- USE food_bank_simple;
--- SHOW FULL TABLES;  -- should show 11 BASE TABLE rows and 5 VIEW rows
--- SELECT * FROM inventory_categories;
--- SELECT * FROM vw_current_inventory;
---
--- Java JDBC URL: jdbc:mysql://localhost:3306/food_bank_simple
---
--- ACCESS RULES (must be enforced in Java, NOT by merely storing the role):
--- COORDINATOR: full application access; creates volunteer accounts; approves
---              recipients; manages users/shifts/inventory/reports/alerts.
--- VOLUNTEER:   process donations, manage inventory, assigned distributions.
--- DONOR:       own account and own donations only. Filter donor_id = session ID.
--- RECIPIENT:   own account/requests/distribution history; only ACTIVE can request.
---
--- WARNING: The 11-table schema is SIMPLER but not a drop-in replacement for the
--- original 19-table schema. Update Java entity classes, queries, and SDD accordingly.
